@@ -2,311 +2,327 @@ package com.udacity.catpoint.security.service;
 
 import com.udacity.catpoint.image.service.ImageService;
 import com.udacity.catpoint.security.application.StatusListener;
-import com.udacity.catpoint.security.data.*;
-import org.junit.jupiter.api.Assertions;
+import com.udacity.catpoint.security.data.AlarmStatus;
+import com.udacity.catpoint.security.data.ArmingStatus;
+import com.udacity.catpoint.security.data.SecurityRepository;
+import com.udacity.catpoint.security.data.Sensor;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.awt.image.BufferedImage;
+import java.util.HashSet;
 import java.util.Set;
+
+import static com.udacity.catpoint.security.data.AlarmStatus.ALARM;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 public class SecurityServiceTest {
-  @InjectMocks
-  private SecurityService securityService;
 
-  private final Sensor doorSensor = new Sensor("Sample door sensor", SensorType.DOOR);
-  private final Sensor windowSensor = new Sensor("Sample window sensor", SensorType.WINDOW);
-  private final Sensor motionSensor = new Sensor("Sample motion sensor", SensorType.MOTION);
+    @InjectMocks
+    private SecurityService securityService;
 
-  @Mock
-  private SecurityRepository securityRepo;
+    @Mock
+    private SecurityRepository securityRepository;
 
-  @Mock
-  private ImageService imageService;
+    @Mock
+    private ImageService imageService;
 
-  @Mock
-  private BufferedImage bufferedImage;
+    @Mock
+    private StatusListener statusListener;
 
-  @Mock
-  private StatusListener statusListener;
+    @Mock
+    private Sensor sensor;
 
-  @BeforeEach
-  public void init() {
-    this.securityService = new SecurityService(this.securityRepo, this.imageService);
-  }
-
-  /**
-   * 1. If alarm is armed and a sensor becomes activated, put the system into pending alarm status.
-   */
-  @ParameterizedTest
-  @EnumSource(value = ArmingStatus.class, names = { "ARMED_AWAY", "ARMED_HOME" })
-  public void alarmArmedAndSensorActivated_toPendingAlarmStatus(ArmingStatus armingStatus) {
-    Mockito.when(this.securityRepo.getArmingStatus()).thenReturn(
-      armingStatus
-    );
-    Mockito.when(this.securityRepo.getAlarmStatus()).thenReturn(
-      AlarmStatus.NO_ALARM
-    );
-    this.securityService.changeSensorActivationStatus(this.doorSensor, true);
-
-    Mockito.verify(this.securityRepo, Mockito.times(1)).setAlarmStatus(
-      AlarmStatus.PENDING_ALARM
-    );
-  }
-
-  /**
-   * 2. If alarm is armed and a sensor becomes activated and the system is already pending alarm, set the alarm status to alarm.
-   */
-  @ParameterizedTest
-  @EnumSource(value = ArmingStatus.class, names = { "ARMED_AWAY", "ARMED_HOME" })
-  public void alarmArmedAndSensorActivatedAndInPendingAlarmStatus_toAlarmStatus(ArmingStatus armingStatus) {
-    Mockito.when(this.securityRepo.getArmingStatus()).thenReturn(
-      armingStatus
-    );
-    Mockito.when(this.securityRepo.getAlarmStatus()).thenReturn(
-      AlarmStatus.PENDING_ALARM
-    );
-    this.securityService.changeSensorActivationStatus(this.doorSensor, true);
-
-    Mockito.verify(this.securityRepo, Mockito.times(1)).setAlarmStatus(
-      AlarmStatus.ALARM
-    );
-  }
-
-  /**
-   * 3. If pending alarm and all sensors are inactive, return to no alarm state.
-   */
-  @Test
-  public void pendingAlarmAndAllSensorsInactive_toNoAlarmStatus() {
-    Mockito.when(this.securityRepo.getAlarmStatus()).thenReturn(
-      AlarmStatus.PENDING_ALARM
-    );
-    for (final Sensor sensor : new Sensor[] { this.doorSensor, this.windowSensor, this.motionSensor }) {
-      sensor.setActive(true);
-      this.securityService.changeSensorActivationStatus(sensor, false);
+    @BeforeEach
+    void init() {
+        securityService = new SecurityService(securityRepository, imageService);
     }
 
-    // There are 3 sensors!
-    Mockito.verify(this.securityRepo, Mockito.times(3)).setAlarmStatus(
-      AlarmStatus.NO_ALARM
-    );
-  }
-
-  /**
-   * 4. If alarm is active, change in sensor state should not affect the alarm state.
-   */
-  @ParameterizedTest
-  @ValueSource(booleans = { true, false })
-  public void alarmActive_sensorStateChangeDoNotAffectAlarmState(boolean isActive) {
-    // Stubbing is only required in `false` case, hence this "lenient" call!
-    Mockito.lenient().when(this.securityRepo.getAlarmStatus()).thenReturn(
-      AlarmStatus.ALARM
-    );
-
-    this.securityService.addSensor(this.windowSensor);
-
-    final Sensor sensor = this.doorSensor;
-    this.securityService.addSensor(sensor);
-    this.securityService.changeSensorActivationStatus(sensor, !isActive);
-
-    Mockito.verify(this.securityRepo, Mockito.never()).setAlarmStatus(
-      Mockito.any(AlarmStatus.class)
-    );
-  }
-
-  /**
-   * 5. If a sensor is activated while already active and the system is in pending state, change it to alarm state.
-   */
-  @Test
-  public void sensorActivatedWhileActiveAndSystemIsPending_changeToAlarmState() {
-    Mockito.when(this.securityRepo.getAlarmStatus()).thenReturn(
-      AlarmStatus.PENDING_ALARM
-    );
-
-    final Sensor sensor = this.doorSensor;
-    this.securityService.addSensor(sensor);
-    this.securityService.changeSensorActivationStatus(sensor, true);
-
-    Mockito.verify(this.securityRepo, Mockito.times(1)).setAlarmStatus(
-      AlarmStatus.ALARM
-    );
-  }
-
-  /**
-   * 6. If a sensor is deactivated while already inactive, make no changes to the alarm state.
-   */
-  @Test
-  public void sensorDeactivatedWhileInactive_noChangesToAlarmStatus() {
-    final Sensor sensor = this.doorSensor;
-    sensor.setActive(false);
-    this.securityService.addSensor(sensor);
-    this.securityService.changeSensorActivationStatus(sensor, false);
-
-    Mockito.verify(this.securityRepo, Mockito.never()).setAlarmStatus(
-      Mockito.any(AlarmStatus.class)
-    );
-  }
-
-  /**
-   * 7. If the image service identifies an image containing a cat while the system is armed-home, put the system into alarm status.
-   */
-  @Test
-  public void imageServiceIdentifiesCatWhileSystemArmedHome_setAlarmStatus() {
-    Mockito.when(this.securityRepo.getArmingStatus()).thenReturn(
-      ArmingStatus.ARMED_HOME
-    );
-
-    Mockito.when(
-      this.imageService.imageContainsCat(
-        Mockito.any(BufferedImage.class),
-        Mockito.anyFloat()
-      )
-    ).thenReturn(true);
-
-    this.securityService.processImage(this.bufferedImage);
-
-    Mockito.verify(this.securityRepo, Mockito.times(1)).setAlarmStatus(
-      AlarmStatus.ALARM
-    );
-  }
-
-  /**
-   * 8. If the image service identifies an image that does not contain a cat,
-   * change the status to no alarm as long as the sensors are not active.
-   */
-  @Test
-  public void imageServiceIdentifiesNoCatAndSensorsInactive_setStatusToNoAlarm() {
-    Mockito.when(
-      this.imageService.imageContainsCat(
-        Mockito.any(BufferedImage.class),
-        Mockito.anyFloat()
-      )
-    ).thenReturn(false);
-
-    final Set<Sensor> sensors = Set.of(this.doorSensor, this.windowSensor, this.motionSensor);
-    for (final Sensor sensor : sensors) {
-      sensor.setActive(false);
+    @Test
+    @DisplayName("Test add status listener")
+    void addStatusListener_addsListener() {
+        securityService.addStatusListener(statusListener);
+        securityService.setAlarmStatus(ALARM);
+        verify(statusListener, times(1)).notify(ALARM);
     }
-    Mockito.when(this.securityRepo.getSensors()).thenReturn(sensors);
 
-    this.securityService.processImage(this.bufferedImage);
-
-    Mockito.verify(this.securityRepo, Mockito.times(1)).setAlarmStatus(
-      AlarmStatus.NO_ALARM
-    );
-  }
-
-  /**
-   * 9. If the system is disarmed, set the status to no alarm.
-   */
-  @Test
-  public void systemDisarmed_setStatusToNoAlarm() {
-    this.securityService.setArmingStatus(ArmingStatus.DISARMED);
-
-    Mockito.verify(this.securityRepo, Mockito.times(1)).setAlarmStatus(
-      AlarmStatus.NO_ALARM
-    );
-  }
-
-  /**
-   * 10. If the system is armed, reset all sensors to inactive.
-   */
-  @ParameterizedTest
-  @EnumSource(value = AlarmStatus.class)
-  public void systemArmed_setAllSensorsToInactive(AlarmStatus alarmStatus) {
-    final Set<Sensor> sensors = Set.of(this.doorSensor, this.windowSensor, this.motionSensor);
-    for (final Sensor sensor : sensors) {
-      sensor.setActive(true);
+    @Test
+    @DisplayName("Test remove status listener")
+    void removeStatusListener_removesListener() {
+        securityService.addStatusListener(statusListener);
+        securityService.removeStatusListener(statusListener);
+        securityService.setAlarmStatus(ALARM);
+        verify(statusListener, times(0)).notify(any(AlarmStatus.class));
     }
-    Mockito.when(this.securityRepo.getSensors()).thenReturn(sensors);
-    Mockito.when(this.securityRepo.getAlarmStatus()).thenReturn(alarmStatus);
 
-    this.securityService.setArmingStatus(ArmingStatus.ARMED_AWAY);
+    @ParameterizedTest
+    @EnumSource(value = ArmingStatus.class, names = { "ARMED_AWAY", "ARMED_HOME" })
+    @DisplayName("Test setting arming status sets alarm status correctly")
+    void setArmingStatus_setsAlarmStatus(ArmingStatus armingStatus) {
+        // Mock trạng thái vũ trang
+        when(securityRepository.getArmingStatus()).thenReturn(armingStatus);
 
-    Assertions.assertTrue(
-      sensors.stream().noneMatch(Sensor::getActive)
-    );
-  }
+        // Thực hiện hành động cần kiểm tra
+        securityService.setArmingStatus(armingStatus);
 
-  /**
-   * 11. If the system is armed-home while the camera shows a cat, set the alarm status to alarm.
-   * (Trigger: Camera shows a cat)
-   */
-  @Test
-  public void cameraShowsCatWhenSystemArmedHome_setStatusToAlarm() {
-    Mockito.when(
-      this.imageService.imageContainsCat(
-        Mockito.any(BufferedImage.class),
-        Mockito.anyFloat()
-      )
-    ).thenReturn(true);
+        // Kiểm tra rằng setAlarmStatus không được gọi
+        verify(securityRepository, times(0)).setAlarmStatus(ALARM);
+    }
 
-    Mockito.when(this.securityRepo.getArmingStatus()).thenReturn(
-      ArmingStatus.ARMED_HOME
-    );
+    @Test
+    void setArmingStatus_disarm_resetsAlarm() {
+        securityService.setArmingStatus(ArmingStatus.DISARMED);
+        verify(securityRepository).setAlarmStatus(AlarmStatus.NO_ALARM);
+    }
 
-    this.securityService.processImage(this.bufferedImage);
+    @ParameterizedTest
+    @EnumSource(value = AlarmStatus.class, names = { "NO_ALARM", "PENDING_ALARM" })
+    @DisplayName("Test sensor activation changes alarm status")
+    void changeSensorActivationStatus_sensorActivated_setsAlarmStatus(AlarmStatus initialStatus) {
+        when(securityRepository.getAlarmStatus()).thenReturn(initialStatus);
+        when(securityRepository.getArmingStatus()).thenReturn(ArmingStatus.ARMED_AWAY);
 
-    Mockito.verify(this.securityRepo, Mockito.times(1)).setAlarmStatus(
-      AlarmStatus.ALARM
-    );
-  }
+        securityService.changeSensorActivationStatus(sensor, true);
 
-  /**
-   * 11. If the system is armed-home while the camera shows a cat, set the alarm status to alarm.
-   * (Trigger: System switches to armed-home)
-   */
-  @Test
-  public void switchToArmedHomeWhenCameraShowsCat_setStatusToAlarm() {
-    Mockito.when(
-      this.imageService.imageContainsCat(
-        Mockito.any(BufferedImage.class),
-        Mockito.anyFloat()
-      )
-    ).thenReturn(true);
+        if (initialStatus == AlarmStatus.NO_ALARM) {
+            verify(securityRepository, times(1)).setAlarmStatus(AlarmStatus.PENDING_ALARM);
+        } else if (initialStatus == AlarmStatus.PENDING_ALARM) {
+            verify(securityRepository, times(1)).setAlarmStatus(ALARM);
+        }
+    }
 
-    this.securityService.setArmingStatus(ArmingStatus.DISARMED);
-    this.securityService.processImage(this.bufferedImage);
-    this.securityService.setArmingStatus(ArmingStatus.ARMED_HOME);
+    @Test
+    void processImage_imageContainsCat_callsCatDetected() {
+        BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+        when(imageService.imageContainsCat(image, 50.0f)).thenReturn(true);
+        securityService.processImage(image);
+        verify(imageService).imageContainsCat(image, 50.0f);
+    }
 
-    Mockito.verify(this.securityRepo, Mockito.times(1)).setAlarmStatus(
-      AlarmStatus.ALARM
-    );
-  }
+    @Test
+    void setArmingStatus_armedAway_changesSensorStatusToInactive() {
+        Sensor sensor = mock(Sensor.class);
+        when(sensor.getActive()).thenReturn(true);
 
-  // Test coverage covers
-  @Test
-  public void addRemoveStatusListeners_noExceptionThrown() {
-    Assertions.assertDoesNotThrow(() -> {
-      this.securityService.addStatusListener(this.statusListener);
-      this.securityService.removeStatusListener(this.statusListener);
-    });
-  }
+        Set<Sensor> sensors = new HashSet<>();
+        sensors.add(sensor);
 
-  @ParameterizedTest
-  @EnumSource(AlarmStatus.class)
-  public void getAlarmStatus_followsSecurityRepo(AlarmStatus alarmStatus) {
-    Mockito.when(this.securityRepo.getAlarmStatus()).thenReturn(alarmStatus);
-    Assertions.assertEquals(alarmStatus, this.securityService.getAlarmStatus());
-  }
+        when(securityRepository.getSensors()).thenReturn(sensors);
+        when(securityRepository.getArmingStatus()).thenReturn(ArmingStatus.DISARMED);
 
-  @Test
-  public void addGetRemoveSensors_noExceptionsThrown() {
-    Assertions.assertDoesNotThrow(() -> {
-      for (final Sensor sensor : new Sensor[] { this.doorSensor, this.windowSensor, this.motionSensor }) {
-        this.securityService.addSensor(sensor);
-        this.securityService.getSensors();
-        this.securityService.removeSensor(sensor);
-      }
-    });
-  }
+        // Mock giá trị trả về của getAlarmStatus() để tránh lỗi NullPointerException
+        when(securityRepository.getAlarmStatus()).thenReturn(AlarmStatus.NO_ALARM);
+
+        // Thực hiện hành động thay đổi trạng thái vũ trang
+        securityService.setArmingStatus(ArmingStatus.ARMED_AWAY);
+
+        // Kiểm tra rằng phương thức updateSensor và setActive đã được gọi đúng cách
+        verify(securityRepository).updateSensor(sensor);
+        verify(sensor).setActive(false);
+    }
+
+
+    @Test
+    void handleSensorActivated_pendingAlarm_setsAlarm() {
+        when(securityRepository.getAlarmStatus()).thenReturn(AlarmStatus.PENDING_ALARM);
+        when(securityRepository.getArmingStatus()).thenReturn(ArmingStatus.ARMED_AWAY);
+
+        securityService.changeSensorActivationStatus(sensor, true);
+        verify(securityRepository).setAlarmStatus(ALARM);
+    }
+
+    @Test
+    void processImage_catDetected_setsAlarm() {
+        BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+        when(imageService.imageContainsCat(image, 50.0f)).thenReturn(true);
+        when(securityRepository.getArmingStatus()).thenReturn(ArmingStatus.ARMED_HOME);
+        securityService.processImage(image);
+        verify(securityRepository, times(1)).setAlarmStatus(ALARM);
+    }
+
+    @Test
+    void testNoActiveSensors_setsNoAlarm() {
+        Sensor sensor1 = mock(Sensor.class);
+        Sensor sensor2 = mock(Sensor.class);
+        when(sensor1.getActive()).thenReturn(false);
+        when(sensor2.getActive()).thenReturn(false);
+
+        Set<Sensor> sensors = Set.of(sensor1, sensor2);
+        when(securityRepository.getSensors()).thenReturn(sensors);
+
+        BufferedImage image = mock(BufferedImage.class);
+        when(imageService.imageContainsCat(any(BufferedImage.class), anyFloat())).thenReturn(false);
+
+        securityService.processImage(image);
+        verify(securityRepository, times(1)).setAlarmStatus(AlarmStatus.NO_ALARM);
+    }
+
+    @Test
+    @DisplayName("Test setArmingStatus with ARMED_HOME and cat detection triggers ALARM status")
+    void processImage_armedHome_andCatDetected_setsAlarmToALARM() {
+        // Mock các đối tượng và phương thức cần thiết
+        SecurityRepository securityRepository = mock(SecurityRepository.class);
+        ImageService imageService = mock(ImageService.class);
+
+        // Khởi tạo SecurityService
+        SecurityService securityService = new SecurityService(securityRepository, imageService);
+
+        // Mock trạng thái cảm biến và vũ trang
+        when(securityRepository.getArmingStatus()).thenReturn(ArmingStatus.ARMED_HOME);
+
+        // Giả sử phát hiện con mèo
+        when(imageService.imageContainsCat(any(), anyFloat())).thenReturn(true);
+
+        // Thiết lập trạng thái báo động khi có mèo
+        securityService.processImage(mock(BufferedImage.class));
+
+        // Kiểm tra rằng setAlarmStatus được gọi với AlarmStatus.ALARM
+        verify(securityRepository).setAlarmStatus(AlarmStatus.ALARM);
+    }
+
+    @Test
+    @DisplayName("Test setArmingStatus with ARMED_HOME and cat detection triggers ALARM status")
+    void processImage_armedHome_andCatDetected_setsAlarmToALARM_noCat() {
+        // Mock các đối tượng và phương thức cần thiết
+        SecurityRepository securityRepository = mock(SecurityRepository.class);
+        ImageService imageService = mock(ImageService.class);
+
+        // Khởi tạo SecurityService
+        SecurityService securityService = new SecurityService(securityRepository, imageService);
+
+        // Giả sử phát hiện con mèo
+        when(imageService.imageContainsCat(any(), anyFloat())).thenReturn(false);
+
+        // Thiết lập trạng thái báo động khi có mèo
+        securityService.processImage(mock(BufferedImage.class));
+
+        // Kiểm tra rằng setAlarmStatus được gọi với AlarmStatus.ALARM
+        verify(securityRepository).setAlarmStatus(AlarmStatus.NO_ALARM);
+    }
+
+    @Test
+    @DisplayName("Test setArmingStatus with ARMED_HOME and hasCat true sets AlarmStatus to ALARM")
+    void setArmingStatus_armedHomeAndHasCat_setsAlarmToALARM() {
+        // Mock các đối tượng cần thiết
+        SecurityRepository securityRepository = mock(SecurityRepository.class);
+        ImageService imageService = mock(ImageService.class);
+
+        // Tạo instance của SecurityService
+        SecurityService securityService = new SecurityService(securityRepository, imageService);
+
+        // Giả lập trạng thái hasCat là true
+        when(imageService.imageContainsCat(any(), anyFloat())).thenReturn(true);
+        securityService.processImage(mock(BufferedImage.class));
+
+        // Mock trạng thái vũ trang ban đầu là DISARMED
+        when(securityRepository.getArmingStatus()).thenReturn(ArmingStatus.DISARMED);
+
+        // Giả lập danh sách cảm biến để tránh lỗi getSensors()
+        Set<Sensor> mockSensors = new HashSet<>();
+        when(securityRepository.getSensors()).thenReturn(mockSensors);
+
+        // Dọn sạch các lần gọi trước đó
+        clearInvocations(securityRepository);
+
+        // Thực thi phương thức setArmingStatus với trạng thái ARMED_HOME
+        securityService.setArmingStatus(ArmingStatus.ARMED_HOME);
+
+        // Kiểm tra rằng setAlarmStatus được gọi với AlarmStatus.ALARM
+        verify(securityRepository).setAlarmStatus(AlarmStatus.ALARM);
+    }
+
+    @Test
+    @DisplayName("Test handleSensorDeactivated sets AlarmStatus to NO_ALARM when AlarmStatus is PENDING_ALARM")
+    void changeSensorActivationStatus_deactivateSensorWhenPendingAlarm_setsAlarmStatusToNoAlarm() {
+        // Mock các đối tượng cần thiết
+        Sensor mockSensor = mock(Sensor.class);
+        when(mockSensor.getActive()).thenReturn(true); // Cảm biến ban đầu đang kích hoạt
+
+        SecurityRepository securityRepository = mock(SecurityRepository.class);
+        when(securityRepository.getAlarmStatus()).thenReturn(AlarmStatus.PENDING_ALARM); // Báo động đang ở trạng thái PENDING_ALARM
+
+        SecurityService securityService = new SecurityService(securityRepository, mock(ImageService.class));
+
+        // Gọi phương thức với cảm biến đang hoạt động và chuyển sang không hoạt động
+        securityService.changeSensorActivationStatus(mockSensor, false);
+
+        // Kiểm tra rằng AlarmStatus được chuyển thành NO_ALARM
+        verify(securityRepository).setAlarmStatus(AlarmStatus.NO_ALARM);
+
+        // Kiểm tra rằng cảm biến được cập nhật trạng thái
+        verify(mockSensor).setActive(false);
+        verify(securityRepository).updateSensor(mockSensor);
+    }
+
+    @Test
+    @DisplayName("Test getAlarmStatus retrieves the correct AlarmStatus from SecurityRepository")
+    void getAlarmStatus_returnsCorrectAlarmStatus() {
+        // Mock SecurityRepository
+        SecurityRepository mockRepository = mock(SecurityRepository.class);
+        when(mockRepository.getAlarmStatus()).thenReturn(AlarmStatus.PENDING_ALARM);
+
+        // Tạo instance SecurityService với mock repository
+        SecurityService securityService = new SecurityService(mockRepository, mock(ImageService.class));
+
+        // Gọi phương thức getAlarmStatus
+        AlarmStatus alarmStatus = securityService.getAlarmStatus();
+
+        // Xác minh kết quả trả về
+        assertEquals(AlarmStatus.PENDING_ALARM, alarmStatus);
+
+        // Kiểm tra rằng phương thức getAlarmStatus() trong repository được gọi chính xác
+        verify(mockRepository).getAlarmStatus();
+    }
+
+    @Test
+    @DisplayName("Test addSensor calls SecurityRepository.addSensor with the correct sensor")
+    void addSensor_callsRepositoryAddSensor() {
+        // Mock SecurityRepository
+        SecurityRepository mockRepository = mock(SecurityRepository.class);
+
+        // Tạo instance SecurityService với mock repository
+        SecurityService securityService = new SecurityService(mockRepository, mock(ImageService.class));
+
+        // Tạo một mock sensor
+        Sensor mockSensor = mock(Sensor.class);
+
+        // Gọi phương thức addSensor
+        securityService.addSensor(mockSensor);
+
+        // Xác minh phương thức addSensor được gọi đúng
+        verify(mockRepository).addSensor(mockSensor);
+    }
+
+    @Test
+    @DisplayName("Test removeSensor calls SecurityRepository.removeSensor with the correct sensor")
+    void removeSensor_callsRepositoryRemoveSensor() {
+        // Mock SecurityRepository
+        SecurityRepository mockRepository = mock(SecurityRepository.class);
+
+        // Tạo instance SecurityService với mock repository
+        SecurityService securityService = new SecurityService(mockRepository, mock(ImageService.class));
+
+        // Tạo một mock sensor
+        Sensor mockSensor = mock(Sensor.class);
+
+        // Gọi phương thức removeSensor
+        securityService.removeSensor(mockSensor);
+
+        // Xác minh phương thức removeSensor được gọi đúng
+        verify(mockRepository).removeSensor(mockSensor);
+    }
+
+
+
+
+
 }

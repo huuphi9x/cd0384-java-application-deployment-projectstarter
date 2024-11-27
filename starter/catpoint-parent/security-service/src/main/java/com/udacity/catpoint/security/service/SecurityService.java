@@ -1,17 +1,15 @@
 package com.udacity.catpoint.security.service;
 
-import com.udacity.catpoint.security.data.Sensor;
 import com.udacity.catpoint.image.service.ImageService;
 import com.udacity.catpoint.security.application.StatusListener;
 import com.udacity.catpoint.security.data.AlarmStatus;
 import com.udacity.catpoint.security.data.ArmingStatus;
 import com.udacity.catpoint.security.data.SecurityRepository;
+import com.udacity.catpoint.security.data.Sensor;
 
 import java.awt.image.BufferedImage;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.function.Consumer;
 
 /**
  * Service that receives information about changes to the security system. Responsible for
@@ -46,12 +44,9 @@ public class SecurityService {
             case DISARMED -> setAlarmStatus(AlarmStatus.NO_ALARM);
 
             case ARMED_HOME, ARMED_AWAY -> {
-                // Added for: 11. If the system is armed-home while the camera shows a cat, set the alarm status to alarm.
                 if (this.hasCat) {
                     this.setAlarmStatus(AlarmStatus.ALARM);
                 }
-
-                // toList makes a copy to prevent ConcurrentModificationException
                 this.getSensors().stream().toList().forEach(sensor ->
                     this.changeSensorActivationStatus(sensor, false)
                 );
@@ -121,9 +116,6 @@ public class SecurityService {
     private void handleSensorDeactivated() {
         switch(securityRepository.getAlarmStatus()) {
             case PENDING_ALARM -> setAlarmStatus(AlarmStatus.NO_ALARM);
-
-            // Removed for: If alarm is active, change in sensor state should not affect the alarm state.
-            // case ALARM -> setAlarmStatus(AlarmStatus.PENDING_ALARM);
         }
     }
 
