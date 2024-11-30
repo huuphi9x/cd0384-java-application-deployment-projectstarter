@@ -1,4 +1,4 @@
-module com.udacity.catpoint.imagemodule {
+module com.udacity.catpoint.image {
   requires java.desktop;
   requires org.slf4j;
   requires software.amazon.awssdk.auth;

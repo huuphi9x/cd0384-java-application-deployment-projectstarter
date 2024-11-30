@@ -50,7 +50,7 @@
           <version>3.0.0-M5</version>
           <configuration>
             <argLine>
-              --add-opens com.udacity.catpoint.securitymodule/com.udacity.catpoint.security.service=ALL-UNNAMED
+              --add-opens com.udacity.catpoint.security/com.udacity.catpoint.security.service=ALL-UNNAMED
             </argLine>
           </configuration>
         </plugin>
@@ -81,7 +81,6 @@
 
   <reporting>
     <plugins>
-      <!-- https://spotbugs.github.io/spotbugs-maven-plugin/dependency-info.html -->
       <plugin>
         <groupId>com.github.spotbugs</groupId>
         <artifactId>spotbugs-maven-plugin</artifactId>
